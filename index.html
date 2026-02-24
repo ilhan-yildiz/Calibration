@@ -1,1 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kalibrasyon Durumu</title>
 
+<style>
+body{
+font-family: Arial;
+text-align:center;
+margin:20px;
+}
+.card{
+padding:20px;
+border-radius:10px;
+box-shadow:0 0 10px rgba(0,0,0,0.2);
+}
+.ok{
+background:#e8f5e9;
+color:#2e7d32;
+}
+.expired{
+background:#ffebee;
+color:#c62828;
+}
+h2{
+font-size:24px;
+}
+.status{
+font-size:26px;
+font-weight:bold;
+margin-top:15px;
+}
+a{
+display:inline-block;
+margin-top:20px;
+padding:10px 20px;
+background:#1976d2;
+color:white;
+text-decoration:none;
+border-radius:5px;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Kalibrasyon Bilgisi</h2>
+<div id="content"></div>
+
+<script>
+const urlParams = new URLSearchParams(window.location.search);
+const id = urlParams.get('id');
+
+fetch('data.json')
+.then(response => response.json())
+.then(data => {
+
+    const cihaz = data.find(x => x.id === id);
+
+    if(!cihaz){
+        document.getElementById("content").innerHTML =
+        "<div class='card expired'>Cihaz bulunamadı</div>";
+        return;
+    }
+
+    const today = new Date();
+    const nextCal = new Date(cihaz.next);
+
+    let className = nextCal >= today ? "ok" : "expired";
+    let statusText = nextCal >= today ? "GEÇERLİ" : "SÜRESİ DOLMUŞ";
+
+    document.getElementById("content").innerHTML =
+    "<div class='card "+className+"'>" +
+    "<p><b>Ekipman ID:</b> "+ cihaz.id +"</p>" +
+    "<p><b>Son Kalibrasyon:</b> "+ cihaz.last +"</p>" +
+    "<p><b>Sonraki Kalibrasyon:</b> "+ cihaz.next +"</p>" +
+    "<div class='status'>"+ statusText +"</div>" +
+    "<a href='sertifikalar/"+ cihaz.id +".pdf' target='_blank'>PDF Sertifika</a>" +
+    "</div>";
+});
+</script>
+
+</body>
+</html>
