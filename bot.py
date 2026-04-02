@@ -97,6 +97,23 @@ def main():
     if not EXCEL_URL:
         logger.error("EXCEL_URL environment variable bulunamadı!")
         return
+
+    # Basit HTTP sunucusu (Render'ın sağlık kontrolü için)
+from flask import Flask
+import threading
+
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def health_check():
+    return "Bot is running!", 200
+
+def run_http_server():
+    port = int(os.environ.get('PORT', 10000))
+    flask_app.run(host='0.0.0.0', port=port)
+
+# HTTP sunucusunu ayrı bir thread'de başlat
+threading.Thread(target=run_http_server, daemon=True).start()
     
     logger.info("Bot başlatılıyor...")
     
@@ -108,6 +125,8 @@ def main():
     
     logger.info("Bot çalışıyor...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
 
 if __name__ == "__main__":
     main()
