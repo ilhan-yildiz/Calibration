@@ -1,4 +1,4 @@
-import pandas as pd
+import openpyxl
 import requests
 from io import BytesIO
 from telegram import Update
@@ -10,14 +10,11 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Telegram Bot Token (Render'dan environment variable olarak gelecek)
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-
-# GitHub'daki Excel dosyasının RAW linki (Render'dan environment variable)
 EXCEL_URL = os.getenv("EXCEL_URL")
 
 def search_excel(search_value):
-    """Excel dosyasında C sütununda ara ve istenen sütunları döndür"""
+    """Excel'de C sütununda ara (pandas kullanmadan)"""
     try:
         logger.info(f"Aranan değer: {search_value}")
         
@@ -25,37 +22,38 @@ def search_excel(search_value):
         response = requests.get(EXCEL_URL, timeout=30)
         response.raise_for_status()
         
-        # Excel'i oku (header yok varsayımıyla)
-        df = pd.read_excel(BytesIO(response.content), sheet_name="TX Detail List", header=None, engine="openpyxl")
+        # Excel'i openpyxl ile oku
+        workbook = openpyxl.load_workbook(BytesIO(response.content), data_only=True)
+        sheet = workbook["TX Detail List"]
         
-        # C sütunu (index 2) tam eşleşme ara
-        mask = df[2].astype(str).str.lower() == str(search_value).lower()
-        results = df[mask]
+        results = []
+        # Satırları tara (1'den başlar, çünkü openpyxl 1-index)
+        for row in sheet.iter_rows(min_row=1, max_row=sheet.max_row, values_only=True):
+            if len(row) > 2 and row[2] is not None:  # C sütunu index 2
+                if str(row[2]).lower() == str(search_value).lower():
+                    # D(3), E(4), H(7), I(8), J(9), K(10), L(11), M(12)
+                    columns_needed = [3, 4, 7, 8, 9, 10, 11, 12]
+                    column_letters = ['D', 'E', 'H', 'I', 'J', 'K', 'L', 'M']
+                    
+                    values = []
+                    for i, col_idx in enumerate(columns_needed):
+                        if col_idx < len(row):
+                            val = row[col_idx] if row[col_idx] is not None else "Boş"
+                            values.append(f"📌 {column_letters[i]}: {val}")
+                        else:
+                            values.append(f"📌 {column_letters[i]}: Yok")
+                    
+                    results.append("\n".join(values))
         
-        if results.empty:
-            logger.info("Eşleşme bulunamadı")
+        if not results:
             return None
         
-        # İstenen sütunlar: D(3), E(4), H(7), I(8), J(9), K(10), L(11), M(12)
-        columns_needed = [3, 4, 7, 8, 9, 10, 11, 12]
-        column_letters = ['D', 'E', 'H', 'I', 'J', 'K', 'L', 'M']
-        
-        output_lines = []
-        for idx, row in results.iterrows():
-            values = []
-            for i, col in enumerate(columns_needed):
-                val = row[col] if pd.notna(row[col]) else "Boş"
-                values.append(f"📌 {column_letters[i]}: {val}")
-            output_lines.append("\n".join(values))
-            output_lines.append("-" * 30)
-        
-        return "\n".join(output_lines)
+        return "\n\n" + "\n" + "-"*30 + "\n".join(results)
     
     except Exception as e:
         logger.error(f"Hata: {str(e)}")
         return f"❌ Hata oluştu: {str(e)}"
 
-# /start komutu
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = """🤖 Merhaba! Ben Excel botuyum.
 
@@ -70,21 +68,16 @@ Sadece aramak istediğiniz değeri yazın.
 """
     await update.message.reply_text(welcome_text)
 
-# Mesajları işle
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     search_text = update.message.text.strip()
-    chat_id = update.effective_chat.id
     
-    logger.info(f"Mesaj alındı - Chat ID: {chat_id}, Aranan: {search_text}")
+    logger.info(f"Mesaj alındı - Aranan: {search_text}")
     
-    # Bekleme mesajı
     await update.message.reply_text(f"🔍 '{search_text}' aranıyor... Lütfen bekleyin.")
     
-    # Arama yap
     result = search_excel(search_text)
     
     if result:
-        # Cevap çok uzunsa parçala
         if len(result) > 4000:
             for i in range(0, len(result), 4000):
                 await update.message.reply_text(result[i:i+4000])
@@ -93,11 +86,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(f"❌ '{search_text}' için eşleşme bulunamadı.")
 
-# Hata yakalama
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}")
 
-# Ana fonksiyon
 def main():
     if not TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN environment variable bulunamadı!")
@@ -111,12 +102,10 @@ def main():
     
     app = Application.builder().token(TOKEN).build()
     
-    # Handler'ları ekle
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_error_handler(error_handler)
     
-    # Botu başlat
     logger.info("Bot çalışıyor...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
