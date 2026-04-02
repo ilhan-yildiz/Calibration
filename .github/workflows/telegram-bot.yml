@@ -22,4 +22,4 @@ jobs:
       
       - name: Run bot
         run: |
-          python bot.py "${{ github.event.client_payload.chat_id }}" "${{ github.event.client_payload.message }}" "${{ secrets.TELEGRAM_BOT }}"
+          python bot.py "${{ github.event.client_payload.chat_id }}" "${{ github.event.client_payload.message }}" "${{ secrets.TELEGRAM_BOT_TOKEN }}"
