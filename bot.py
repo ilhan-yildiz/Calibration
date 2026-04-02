@@ -6,7 +6,7 @@ import openpyxl
 import requests
 from io import BytesIO
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,19 +25,15 @@ def run_http_server():
     port = int(os.environ.get('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port)
 
-# HTTP sunucusunu başlat
 threading.Thread(target=run_http_server, daemon=True).start()
 
 def search_excel(search_value):
-    """Excel'de C sütununda ara"""
     try:
         logger.info(f"Aranan değer: {search_value}")
         
-        # Excel'i indir
         response = requests.get(EXCEL_URL, timeout=30)
         response.raise_for_status()
         
-        # Excel'i openpyxl ile oku
         workbook = openpyxl.load_workbook(BytesIO(response.content), data_only=True)
         sheet = workbook["TX Detail List"]
         
@@ -67,7 +63,7 @@ def search_excel(search_value):
         logger.error(f"Hata: {str(e)}")
         return f"❌ Hata oluştu: {str(e)}"
 
-async def start(update: Update, context):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = """🤖 Merhaba! Ben Excel botuyum.
 
 📊 Nasıl çalışırım:
@@ -81,25 +77,16 @@ Sadece aramak istediğiniz değeri yazın.
 """
     await update.message.reply_text(welcome_text)
 
-async def handle_message(update: Update, context):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     search_text = update.message.text.strip()
-    
-    # /start komutunu kontrol et
-    if search_text == "/start":
-        await start(update, context)
-        return
-    
     logger.info(f"Mesaj alındı - Aranan: {search_text}")
+    
     await update.message.reply_text(f"🔍 '{search_text}' aranıyor... Lütfen bekleyin.")
     
     result = search_excel(search_text)
     
     if result:
-        if len(result) > 4000:
-            for i in range(0, len(result), 4000):
-                await update.message.reply_text(result[i:i+4000])
-        else:
-            await update.message.reply_text(f"✅ **BULUNDU:**\n\n{result}", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ **BULUNDU:**\n\n{result}", parse_mode="Markdown")
     else:
         await update.message.reply_text(f"❌ '{search_text}' için eşleşme bulunamadı.")
 
@@ -109,7 +96,7 @@ def main():
         return
     
     if not EXCEL_URL:
-        logger.error("EXCEL_URL yok! Lütfen Render'da environment variable olarak ekleyin.")
+        logger.error("EXCEL_URL yok!")
         return
     
     logger.info("Bot başlatılıyor...")
