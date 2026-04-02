@@ -5,6 +5,8 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import os
 import logging
+from flask import Flask
+import threading
 
 # Logging ayarları
 logging.basicConfig(level=logging.INFO)
@@ -89,19 +91,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}")
 
-def main():
-    if not TOKEN:
-        logger.error("TELEGRAM_BOT_TOKEN environment variable bulunamadı!")
-        return
-    
-    if not EXCEL_URL:
-        logger.error("EXCEL_URL environment variable bulunamadı!")
-        return
-
-    # Basit HTTP sunucusu (Render'ın sağlık kontrolü için)
-from flask import Flask
-import threading
-
+# Flask uygulaması (Render'ın sağlık kontrolü için)
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -112,8 +102,17 @@ def run_http_server():
     port = int(os.environ.get('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port)
 
-# HTTP sunucusunu ayrı bir thread'de başlat
-threading.Thread(target=run_http_server, daemon=True).start()
+def main():
+    if not TOKEN:
+        logger.error("TELEGRAM_BOT_TOKEN environment variable bulunamadı!")
+        return
+    
+    if not EXCEL_URL:
+        logger.error("EXCEL_URL environment variable bulunamadı!")
+        return
+
+    # HTTP sunucusunu ayrı bir thread'de başlat
+    threading.Thread(target=run_http_server, daemon=True).start()
     
     logger.info("Bot başlatılıyor...")
     
@@ -125,8 +124,6 @@ threading.Thread(target=run_http_server, daemon=True).start()
     
     logger.info("Bot çalışıyor...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
-
-
 
 if __name__ == "__main__":
     main()
