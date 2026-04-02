@@ -20,20 +20,16 @@ def search_excel(search_value):
     try:
         logger.info(f"Aranan değer: {search_value}")
         
-        # Excel'i indir
         response = requests.get(EXCEL_URL, timeout=30)
         response.raise_for_status()
         
-        # Excel'i openpyxl ile oku
         workbook = openpyxl.load_workbook(BytesIO(response.content), data_only=True)
         sheet = workbook["TX Detail List"]
         
         results = []
-        # Satırları tara (1'den başlar, çünkü openpyxl 1-index)
         for row in sheet.iter_rows(min_row=1, max_row=sheet.max_row, values_only=True):
-            if len(row) > 2 and row[2] is not None:  # C sütunu index 2
+            if len(row) > 2 and row[2] is not None:
                 if str(row[2]).lower() == str(search_value).lower():
-                    # D(3), E(4), H(7), I(8), J(9), K(10), L(11), M(12)
                     columns_needed = [3, 4, 7, 8, 9, 10, 11, 12]
                     column_letters = ['D', 'E', 'H', 'I', 'J', 'K', 'L', 'M']
                     
@@ -91,7 +87,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}")
 
-# Flask uygulaması (Render'ın sağlık kontrolü için)
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -111,7 +106,6 @@ def main():
         logger.error("EXCEL_URL environment variable bulunamadı!")
         return
 
-    # HTTP sunucusunu ayrı bir thread'de başlat
     threading.Thread(target=run_http_server, daemon=True).start()
     
     logger.info("Bot başlatılıyor...")
