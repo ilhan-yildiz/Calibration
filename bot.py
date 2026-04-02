@@ -7,6 +7,7 @@ import os
 import logging
 from flask import Flask
 import threading
+import asyncio
 
 # Logging ayarları
 logging.basicConfig(level=logging.INFO)
@@ -87,6 +88,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}")
 
+# Flask uygulaması (Render'ın sağlık kontrolü için)
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -97,6 +99,17 @@ def run_http_server():
     port = int(os.environ.get('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port)
 
+async def run_bot():
+    """Bot'u başlatan asenkron fonksiyon"""
+    app = Application.builder().token(TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_error_handler(error_handler)
+    
+    logger.info("Bot çalışıyor...")
+    await app.run_polling(allowed_updates=Update.ALL_TYPES)
+
 def main():
     if not TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN environment variable bulunamadı!")
@@ -106,18 +119,21 @@ def main():
         logger.error("EXCEL_URL environment variable bulunamadı!")
         return
 
+    # HTTP sunucusunu ayrı bir thread'de başlat
     threading.Thread(target=run_http_server, daemon=True).start()
     
     logger.info("Bot başlatılıyor...")
     
-    app = Application.builder().token(TOKEN).build()
+    # Yeni event loop oluştur ve bot'u çalıştır
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_error_handler(error_handler)
-    
-    logger.info("Bot çalışıyor...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        loop.run_until_complete(run_bot())
+    except KeyboardInterrupt:
+        logger.info("Bot durduruluyor...")
+    finally:
+        loop.close()
 
 if __name__ == "__main__":
     main()
