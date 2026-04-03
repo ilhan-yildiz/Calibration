@@ -75,7 +75,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 Sadece aramak istediğiniz değeri yazın.
 
 Örnek: KIPP00GHC01CP101
-logger.info("EXCEL_URL")
 """
     await update.message.reply_text(welcome_text)
 
@@ -105,7 +104,8 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
+ 
+    logger.info("EXCEL_URL")
     logger.info("Bot çalışıyor...")
     app.run_polling()
 
