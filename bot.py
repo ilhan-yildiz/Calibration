@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 EXCEL_URL = os.getenv("EXCEL_URL")
+ logger.info("EXCEL_UR"L)
 
 # Flask uygulaması
 flask_app = Flask(__name__)
