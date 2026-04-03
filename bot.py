@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-EXCEL_URL = os.getenv("EXCEL_URL")
+
  logger.info("EXCEL_UR"L)
 
 # Flask uygulaması
@@ -75,6 +75,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 Sadece aramak istediğiniz değeri yazın.
 
 Örnek: KIPP00GHC01CP101
+EXCEL_URL = os.getenv("EXCEL_URL")
 """
     await update.message.reply_text(welcome_text)
 
