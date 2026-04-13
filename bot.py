@@ -18,7 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-EXCEL_URL = os.getenv("EXCEL_URL", "https://github.com/ilhan-yildiz/Calibration/raw/main/Yearly_Calibration_Schedule.xlsx")
+EXCEL_URL = os.getenv("EXCEL_URL", "https://raw.githubusercontent.com/ilhan-yildiz/Calibration/main/Yearly_Calibration_Schedule.xlsx")
 SHEET_NAME = os.getenv("SHEET_NAME", "TX Detail List")  # Varsayılan sheet adı
 PORT = int(os.environ.get('PORT', 10000))
 
