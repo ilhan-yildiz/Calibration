@@ -40,27 +40,43 @@ threading.Thread(target=run_http_server, daemon=True).start()
 logger.info(f"HTTP sunucusu başlatıldı - Port: {PORT}")
 
 def format_date_to_tr(date_value):
-    """Tarihi gg.aa.yyyy formatına çevir"""
+    """Tarihi gg.aa.yyyy formatına çevir (Excel'deki yyyy-aa-gg'den)"""
     if not date_value:
-        return "Belirtilmemiş"
+        return None
     
     # String ise
     if isinstance(date_value, str):
-        # yyyy-aa-gg formatında ise
+        # yyyy-aa-gg formatında ise (Excel'den gelen)
         if '-' in date_value:
             parts = date_value.split('-')
             if len(parts) == 3:
                 return f"{parts[2]}.{parts[1]}.{parts[0]}"
         # gg.aa.yyyy formatında ise
         elif '.' in date_value:
-            return date_value
-        return date_value
+            # Doğru formatta mı kontrol et
+            if re.match(r'^\d{2}\.\d{2}\.\d{4}$', date_value):
+                return date_value
+        return None
     
     # datetime objesi ise
     if hasattr(date_value, 'strftime'):
         return date_value.strftime("%d.%m.%Y")
     
-    return str(date_value)
+    return None
+
+def validate_date_tr(date_string):
+    """gg.aa.yyyy formatını kontrol et ve yyyy-aa-gg formatına çevir"""
+    pattern = r'^(\d{2})\.(\d{2})\.(\d{4})$'
+    match = re.match(pattern, date_string)
+    if match:
+        day, month, year = match.groups()
+        # Tarihin geçerli olup olmadığını kontrol et
+        try:
+            datetime(int(year), int(month), int(day))
+            return f"{year}-{month}-{day}", True
+        except ValueError:
+            return None, False
+    return None, False
 
 def parse_date_tr(date_string):
     """gg.aa.yyyy formatını datetime objesine çevir"""
@@ -69,15 +85,6 @@ def parse_date_tr(date_string):
         return datetime(int(year), int(month), int(day))
     except:
         return None
-
-def validate_date_tr(date_string):
-    """gg.aa.yyyy formatını kontrol et ve yyyy-aa-gg formatına çevir"""
-    pattern = r'^(\d{2})\.(\d{2})\.(\d{4})$'
-    match = re.match(pattern, date_string)
-    if match:
-        day, month, year = match.groups()
-        return f"{year}-{month}-{day}", True
-    return None, False
 
 def get_column_headers(workbook, sheet_name):
     """2. satırdaki kolon başlıklarını al"""
@@ -118,7 +125,8 @@ def search_in_column_c_partial(search_value, workbook, sheet_name):
                             value = str(row[col_idx - 1])
                             # Tarih sütunu ise (E sütunu - index 5)
                             if col_idx == 5:
-                                value = format_date_to_tr(value)
+                                formatted = format_date_to_tr(value)
+                                value = formatted if formatted else "Belirtilmemiş"
                             if len(value) > 30:
                                 value = value[:27] + "..."
                             table += f"├────────────┼─────────────────────────────────┤\n"
@@ -159,7 +167,7 @@ def search_calibration_date(search_value, workbook, sheet_name):
                     c_value = row[2] if len(row) > 2 else None
                     e_value = row[4] if len(row) > 4 else None
                     
-                    formatted_date = format_date_to_tr(e_value)
+                    formatted_date = format_date_to_tr(e_value) if e_value else "Belirtilmemiş"
                     
                     table = "```\n"
                     table += "┌─────────────────────┬─────────────────────────────────┐\n"
@@ -190,14 +198,13 @@ def search_by_date_range(start_date_tr, end_date_tr, workbook, sheet_name):
         
         sheet = workbook[sheet_name]
         headers = get_column_headers(workbook, sheet_name)
-        results = []
         
         # Tarihleri datetime objesine çevir
         start_date = parse_date_tr(start_date_tr)
         end_date = parse_date_tr(end_date_tr)
         
         if not start_date or not end_date:
-            return None, "❌ Hatalı tarih formatı! gg.aa.yyyy kullanın."
+            return None, "❌ Hatalı tarih formatı! **gg.aa.yyyy** kullanın.\nÖrnek: 01.01.2026"
         
         c_header = headers.get(3, "Ekipman Kodu")
         e_header = headers.get(5, "Kalibrasyon Tarihi")
@@ -205,9 +212,10 @@ def search_by_date_range(start_date_tr, end_date_tr, workbook, sheet_name):
         found_equipment = []
         
         for row_idx, row in enumerate(sheet.iter_rows(min_row=3, values_only=True), 3):
-            if len(row) > 4 and row[4] is not None:  # E sütunu dolu mu?
+            if len(row) > 4 and row[4] is not None:
                 date_value = row[4]
                 equipment_code = row[2] if len(row) > 2 else None
+                description = row[3] if len(row) > 3 else None
                 
                 # Tarihi datetime'a çevir
                 row_date = None
@@ -215,11 +223,6 @@ def search_by_date_range(start_date_tr, end_date_tr, workbook, sheet_name):
                     if '-' in date_value:
                         try:
                             row_date = datetime.strptime(date_value, "%Y-%m-%d")
-                        except:
-                            pass
-                    elif '.' in date_value:
-                        try:
-                            row_date = datetime.strptime(date_value, "%d.%m.%Y")
                         except:
                             pass
                 elif hasattr(date_value, 'strftime'):
@@ -230,6 +233,7 @@ def search_by_date_range(start_date_tr, end_date_tr, workbook, sheet_name):
                     found_equipment.append({
                         'row': row_idx,
                         'code': equipment_code,
+                        'description': description,
                         'date': formatted_date
                     })
         
@@ -238,26 +242,85 @@ def search_by_date_range(start_date_tr, end_date_tr, workbook, sheet_name):
         
         # Tablo oluştur
         table = "```\n"
-        table += "┌────────┬─────────────────────────────────┬─────────────────┐\n"
-        table += "│ Satır  │ Ekipman Kodu                    │ Kalibrasyon     │\n"
-        table += "│ No     │                                 │ Tarihi          │\n"
-        table += "├────────┼─────────────────────────────────┼─────────────────┤\n"
+        table += "┌────────┬─────────────────────────────────┬──────────────────────────────┬─────────────────┐\n"
+        table += "│ Satır  │ Ekipman Kodu                    │ Açıklama                      │ Kalibrasyon     │\n"
+        table += "│ No     │                                 │                               │ Tarihi          │\n"
+        table += "├────────┼─────────────────────────────────┼──────────────────────────────┼─────────────────┤\n"
         
-        for item in found_equipment[:20]:  # En fazla 20 sonuç
+        for item in found_equipment[:20]:
             code = str(item['code'])[:31] if item['code'] else "Belirtilmemiş"
-            table += f"│ {item['row']:<6} │ {code:<31} │ {item['date']:<15} │\n"
+            desc = str(item['description'])[:28] if item['description'] else "Belirtilmemiş"
+            table += f"│ {item['row']:<6} │ {code:<31} │ {desc:<28} │ {item['date']:<15} │\n"
         
         if len(found_equipment) > 20:
-            table += f"├────────┼─────────────────────────────────┼─────────────────┤\n"
-            table += f"│ ...    │ {len(found_equipment) - 20} daha sonuç var...                      │                 │\n"
+            table += f"├────────┼─────────────────────────────────┼──────────────────────────────┼─────────────────┤\n"
+            table += f"│ ...    │ {len(found_equipment) - 20} daha sonuç var...                                              │                 │\n"
         
-        table += "└────────┴─────────────────────────────────┴─────────────────┘\n"
+        table += "└────────┴─────────────────────────────────┴──────────────────────────────┴─────────────────┘\n"
         table += "```"
         
-        return [table], f"✅ {len(found_equipment)} ekipman bulundu"
+        return [table], f"✅ {len(found_equipment)} ekipman bulundu ({start_date_tr} - {end_date_tr})"
         
     except Exception as e:
         return None, f"Arama hatası: {str(e)}"
+
+def get_all_calibrated_equipment(workbook, sheet_name):
+    """Tarihi olan tüm ekipmanları listele (C ve D sütunları)"""
+    try:
+        if sheet_name not in workbook.sheetnames:
+            return None, f"❌ '{sheet_name}' sayfası bulunamadı!"
+        
+        sheet = workbook[sheet_name]
+        headers = get_column_headers(workbook, sheet_name)
+        
+        c_header = headers.get(3, "Ekipman Kodu")
+        d_header = headers.get(4, "Açıklama")
+        e_header = headers.get(5, "Kalibrasyon Tarihi")
+        
+        equipment_list = []
+        
+        for row_idx, row in enumerate(sheet.iter_rows(min_row=3, values_only=True), 3):
+            if len(row) > 4 and row[4] is not None:  # E sütunu dolu mu?
+                date_value = row[4]
+                equipment_code = row[2] if len(row) > 2 else None
+                description = row[3] if len(row) > 3 else None
+                
+                formatted_date = format_date_to_tr(date_value) if date_value else None
+                
+                if formatted_date:  # Sadece geçerli tarihi olanlar
+                    equipment_list.append({
+                        'row': row_idx,
+                        'code': equipment_code,
+                        'description': description,
+                        'date': formatted_date
+                    })
+        
+        if not equipment_list:
+            return None, "❌ Henüz kalibrasyon tarihi eklenmiş ekipman bulunamadı."
+        
+        # Tablo oluştur
+        table = "```\n"
+        table += "┌────────┬─────────────────────────────────┬──────────────────────────────┬─────────────────┐\n"
+        table += "│ Satır  │ Ekipman Kodu                    │ Açıklama                      │ Kalibrasyon     │\n"
+        table += "│ No     │                                 │                               │ Tarihi          │\n"
+        table += "├────────┼─────────────────────────────────┼──────────────────────────────┼─────────────────┤\n"
+        
+        for item in equipment_list[:30]:
+            code = str(item['code'])[:31] if item['code'] else "Belirtilmemiş"
+            desc = str(item['description'])[:28] if item['description'] else "Belirtilmemiş"
+            table += f"│ {item['row']:<6} │ {code:<31} │ {desc:<28} │ {item['date']:<15} │\n"
+        
+        if len(equipment_list) > 30:
+            table += f"├────────┼─────────────────────────────────┼──────────────────────────────┼─────────────────┤\n"
+            table += f"│ ...    │ {len(equipment_list) - 30} daha sonuç var...                                              │                 │\n"
+        
+        table += "└────────┴─────────────────────────────────┴──────────────────────────────┴─────────────────┘\n"
+        table += "```"
+        
+        return [table], f"✅ Toplam {len(equipment_list)} ekipmanın kalibrasyon tarihi girilmiştir."
+        
+    except Exception as e:
+        return None, f"Hata: {str(e)}"
 
 def update_calibration_date(equipment_code, new_date, workbook, sheet_name):
     """Excel'de kalibrasyon tarihini güncelle (E sütunu)"""
@@ -460,6 +523,11 @@ async def tarih_ara_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_date = context.args[0].strip()
     end_date = context.args[1].strip()
     
+    # Tarih formatını kontrol et
+    if not re.match(r'^\d{2}\.\d{2}\.\d{4}$', start_date) or not re.match(r'^\d{2}\.\d{2}\.\d{4}$', end_date):
+        await update.message.reply_text("❌ Hatalı tarih formatı! Lütfen **gg.aa.yyyy** formatında girin.\nÖrnek: 01.01.2026", parse_mode="Markdown")
+        return
+    
     await update.message.reply_text(f"📅 '{start_date}' - '{end_date}' tarihleri arasında kalibrasyon yapılan ekipmanlar aranıyor...")
     
     try:
@@ -467,6 +535,26 @@ async def tarih_ara_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         workbook = openpyxl.load_workbook(BytesIO(response.content), data_only=True)
         
         results, message = search_by_date_range(start_date, end_date, workbook, SHEET_NAME)
+        
+        if results:
+            await update.message.reply_text(message, parse_mode="Markdown")
+            for result in results:
+                await update.message.reply_text(result, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(message)
+            
+    except Exception as e:
+        await update.message.reply_text(f"❌ Hata: {str(e)}")
+
+async def listeli_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tarihi olan tüm ekipmanları listele (C ve D sütunları)"""
+    await update.message.reply_text("📋 Kalibrasyon tarihi girilmiş tüm ekipmanlar listeleniyor...\n\nBu işlem birkaç saniye sürebilir.")
+    
+    try:
+        response = requests.get(EXCEL_URL, timeout=30)
+        workbook = openpyxl.load_workbook(BytesIO(response.content), data_only=True)
+        
+        results, message = get_all_calibrated_equipment(workbook, SHEET_NAME)
         
         if results:
             await update.message.reply_text(message, parse_mode="Markdown")
@@ -487,9 +575,14 @@ async def guncelle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     equipment_code = context.args[0].strip()
     new_date_tr = context.args[1].strip()
     
+    # Tarih formatını kontrol et
+    if not re.match(r'^\d{2}\.\d{2}\.\d{4}$', new_date_tr):
+        await update.message.reply_text("❌ Hatalı tarih formatı! Lütfen **gg.aa.yyyy** formatında girin.\nÖrnek: 14.04.2026", parse_mode="Markdown")
+        return
+    
     converted_date, is_valid = validate_date_tr(new_date_tr)
     if not is_valid:
-        await update.message.reply_text("❌ Hatalı tarih formatı! Lütfen **gg.aa.yyyy** formatında girin.\nÖrnek: 14.04.2026", parse_mode="Markdown")
+        await update.message.reply_text("❌ Geçersiz tarih! Lütfen gerçek bir tarih girin.\nÖrnek: 14.04.2026", parse_mode="Markdown")
         return
     
     await update.message.reply_text(f"✏️ '{equipment_code}' için kalibrasyon tarihi güncelleniyor: {new_date_tr}")
@@ -562,11 +655,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
    • Örnek: `/tarih 00GHC01CP101`
 
 📆 `/tarih_ara <baslangic> <bitis>` - Tarih aralığında kalibrasyon yapılan ekipmanları listeler
-   • Tarih formatı: **gg.aa.yyyy**
    • Örnek: `/tarih_ara 01.01.2026 31.12.2026`
 
+📋 `/listeli` - **Kalibrasyon tarihi girilmiş TÜM ekipmanları** listeler
+   • C (ekipman kodu) ve D (açıklama) sütunlarını gösterir
+   • Toplam sayıyı da belirtir
+
 ✏️ `/guncelle <kod> <tarih>` - Kalibrasyon tarihini günceller
-   • Tarih formatı: **gg.aa.yyyy**
    • Örnek: `/guncelle 00GHC01CP101 14.04.2026`
 
 🗑️ `/sil <kod>` - Kalibrasyon tarihini **tamamen siler**
@@ -575,12 +670,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ℹ️ `/start` - Botu başlat ve Excel bilgilerini göster
 🆘 `/help` - Bu yardım menüsü
 
-*Özellikler:*
-• Kolon isimleri **2. satırdan** alınır
-• **Kısmi eşleşme** yapar (büyük/küçük harf duyarsız)
-• Sonuçlar **tablo formatında** gösterilir
-• Tarihler **gg.aa.yyyy** formatında görüntülenir
-• Değişiklikler **otomatik GitHub'a kaydedilir**"""
+*Tarih Formatı:* **gg.aa.yyyy** (örnek: 14.04.2026)
+*Not:* Tüm tarih girişleri ve çıkışları bu formattadır!"""
     
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
@@ -603,6 +694,7 @@ def main():
     application.add_handler(CommandHandler("ara", search_command))
     application.add_handler(CommandHandler("tarih", tarih_command))
     application.add_handler(CommandHandler("tarih_ara", tarih_ara_command))
+    application.add_handler(CommandHandler("listeli", listeli_command))
     application.add_handler(CommandHandler("guncelle", guncelle_command))
     application.add_handler(CommandHandler("sil", sil_command))
     application.add_handler(CommandHandler("help", help_command))
