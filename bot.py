@@ -45,8 +45,15 @@ def get_column_headers(workbook, sheet_name):
     except:
         return {}
 
+def get_column_letter_by_header(headers, search_header):
+    """Başlık adına göre sütun harfini bul"""
+    for col_idx, header in headers.items():
+        if search_header.lower() in str(header).lower():
+            return openpyxl.utils.get_column_letter(col_idx)
+    return None
+
 def search_in_column_c_partial(search_value, workbook, sheet_name):
-    """C sütununda kısmi eşleşme arama (3. satırdan itibaren)"""
+    """C sütununda kısmi eşleşme arama (3. satırdan itibaren) - tüm sütunları başlık adıyla göster"""
     try:
         if sheet_name not in workbook.sheetnames:
             return None, f"❌ '{sheet_name}' sayfası bulunamadı!\nMevcut sayfalar: {', '.join(workbook.sheetnames)}"
@@ -60,13 +67,12 @@ def search_in_column_c_partial(search_value, workbook, sheet_name):
             if len(row) > 2 and row[2] is not None:
                 cell_value = str(row[2]).strip()
                 if search_lower in cell_value.lower():
-                    # C ve D sütunlarındaki verileri al
-                    c_value = row[2] if len(row) > 2 else None
-                    d_value = row[3] if len(row) > 3 else None
-                    
                     result_text = f"📌 *Satır {row_idx}*\n"
-                    result_text += f"📌 *{headers.get(3, 'C Sütunu')}:* {c_value}\n"
-                    result_text += f"📅 *{headers.get(4, 'D Sütunu')}:* {d_value if d_value else 'Belirtilmemiş'}\n"
+                    
+                    # Tüm dolu sütunları başlık adıyla göster
+                    for col_idx, header in headers.items():
+                        if col_idx - 1 < len(row) and row[col_idx - 1] is not None:
+                            result_text += f"   • *{header}:* {row[col_idx - 1]}\n"
                     
                     results.append(result_text)
                     
@@ -81,7 +87,7 @@ def search_in_column_c_partial(search_value, workbook, sheet_name):
         return None, f"Arama hatası: {str(e)}"
 
 def search_calibration_date(search_value, workbook, sheet_name):
-    """C sütununda arama yap, C ve D sütunlarındaki verileri göster"""
+    """C sütununda arama yap, C ve E sütunlarındaki verileri göster (E sütunu kalibrasyon tarihi)"""
     try:
         if sheet_name not in workbook.sheetnames:
             return None, f"❌ '{sheet_name}' sayfası bulunamadı!"
@@ -91,15 +97,20 @@ def search_calibration_date(search_value, workbook, sheet_name):
         results = []
         search_lower = str(search_value).lower().strip()
         
+        # C sütunu başlığı (3. sütun)
+        c_header = headers.get(3, "Ekipman Kodu")
+        # E sütunu başlığı (5. sütun) - kalibrasyon tarihi
+        e_header = headers.get(5, "Kalibrasyon Tarihi")
+        
         for row_idx, row in enumerate(sheet.iter_rows(min_row=3, values_only=True), 3):
             if len(row) > 2 and row[2] is not None:
                 cell_value = str(row[2]).strip()
                 if search_lower in cell_value.lower():
                     c_value = row[2] if len(row) > 2 else None
-                    d_value = row[3] if len(row) > 3 else None
+                    e_value = row[4] if len(row) > 4 else None  # E sütunu = index 4
                     
-                    result_text = f"📌 *{headers.get(3, 'Ekipman Kodu')}:* {c_value}\n"
-                    result_text += f"📅 *{headers.get(4, 'Kalibrasyon Tarihi')}:* {d_value if d_value else 'Belirtilmemiş'}\n"
+                    result_text = f"📌 *{c_header}:* {c_value}\n"
+                    result_text += f"📅 *{e_header}:* {e_value if e_value else 'Belirtilmemiş'}\n"
                     result_text += f"🔍 *Satır:* {row_idx}\n"
                     result_text += f"━━━━━━━━━━━━━━━━━━━━━\n"
                     
@@ -116,7 +127,7 @@ def search_calibration_date(search_value, workbook, sheet_name):
         return None, f"Arama hatası: {str(e)}"
 
 def update_calibration_date(equipment_code, new_date, workbook, sheet_name):
-    """Excel'de kalibrasyon tarihini güncelle"""
+    """Excel'de kalibrasyon tarihini güncelle (E sütunu)"""
     try:
         if sheet_name not in workbook.sheetnames:
             return False, f"Sayfa bulunamadı: {sheet_name}"
@@ -129,8 +140,8 @@ def update_calibration_date(equipment_code, new_date, workbook, sheet_name):
             if len(row) > 2 and row[2].value is not None:
                 cell_value = str(row[2].value).strip()
                 if cell_value.lower() == search_lower:
-                    # D sütununu güncelle (4. sütun)
-                    date_cell = sheet.cell(row_idx, 4)
+                    # E sütununu güncelle (5. sütun)
+                    date_cell = sheet.cell(row_idx, 5)
                     date_cell.value = new_date
                     
                     # Yeşil renklendir
@@ -169,7 +180,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             headers = get_column_headers(workbook, SHEET_NAME)
             info_text += "📝 *Kolon Başlıkları (2. satır)*\n"
-            for col_idx, header in list(headers.items())[:5]:
+            for col_idx, header in list(headers.items())[:8]:
                 col_letter = openpyxl.utils.get_column_letter(col_idx)
                 info_text += f"• {col_letter}: {header}\n"
         
@@ -179,14 +190,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Excel okuma hatası: {str(e)}")
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/ara komutu - C sütununda kısmi eşleşme arama"""
+    """/ara komutu - C sütununda kısmi eşleşme arama (tüm sütunları başlık adıyla göster)"""
     if not context.args:
-        await update.message.reply_text("❌ *Kullanım:* `/ara ARANACAK_DEGER`\n\nÖrnek: `/ara 12LAB20CF101`", parse_mode="Markdown")
+        await update.message.reply_text("❌ *Kullanım:* `/ara ARANACAK_DEGER`\n\nÖrnek: `/ara 12LAB20CF101`\n\nBu komut kısmi eşleşme yapar.", parse_mode="Markdown")
         return
     
     search_text = " ".join(context.args).strip()
     
-    await update.message.reply_text(f"🔍 '{search_text}' aranıyor... (C sütununda, kısmi eşleşme)")
+    await update.message.reply_text(f"🔍 '{search_text}' aranıyor... (C sütununda, **kısmi eşleşme**)", parse_mode="Markdown")
     logger.info(f"Arama yapılıyor: '{search_text}'")
     
     try:
@@ -208,9 +219,9 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Hata: {str(e)}")
 
 async def tarih_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/tarih komutu - Kalibrasyon tarihi sorgulama (sadece C ve D sütunları)"""
+    """/tarih komutu - Kalibrasyon tarihi sorgulama (sadece C ve E sütunları)"""
     if not context.args:
-        await update.message.reply_text("❌ *Kullanım:* `/tarih ARANACAK_DEGER`\n\nÖrnek: `/tarih 12LAB20CF101`\n\nBu komut sadece ekipman kodu ve kalibrasyon tarihini gösterir.", parse_mode="Markdown")
+        await update.message.reply_text("❌ *Kullanım:* `/tarih ARANACAK_DEGER`\n\nÖrnek: `/tarih 12LAB20CF101`\n\nBu komut sadece ekipman kodu (C) ve kalibrasyon tarihini (E) gösterir.", parse_mode="Markdown")
         return
     
     search_text = " ".join(context.args).strip()
@@ -234,7 +245,7 @@ async def tarih_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Hata: {str(e)}")
 
 async def guncelle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/guncelle komutu - Kalibrasyon tarihini güncelle"""
+    """/guncelle komutu - Kalibrasyon tarihini güncelle (E sütunu)"""
     if len(context.args) < 2:
         await update.message.reply_text("❌ *Kullanım:* `/guncelle EKIPMAN_KODU YENI_TARIH`\n\nÖrnek: `/guncelle 12LAB20CF101 2026-05-15`\n\nTarih formatı: YYYY-AA-GG", parse_mode="Markdown")
         return
@@ -252,16 +263,12 @@ async def guncelle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✏️ '{equipment_code}' için kalibrasyon tarihi güncelleniyor: {new_date}")
     
     try:
-        # Excel'i indir
         response = requests.get(EXCEL_URL, timeout=30)
         workbook = openpyxl.load_workbook(BytesIO(response.content), data_only=False)
         
-        # Güncelle
         success, message = update_calibration_date(equipment_code, new_date, workbook, SHEET_NAME)
         
         if success:
-            # Güncellenmiş dosyayı kaydet (not: GitHub'a yazmak için ek işlem gerekir)
-            # Şimdilik sadece mesaj gösteriyoruz
             await update.message.reply_text(f"✅ {message}\n\n⚠️ **Not:** Değişiklikler şu an sadece geçici olarak yapıldı. GitHub'a kaydetmek için ek kod gerekir.", parse_mode="Markdown")
         else:
             await update.message.reply_text(f"❌ {message}")
@@ -274,23 +281,26 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 *Komutlar:*
 
-🔍 `/ara <deger>` - C sütununda **kısmi eşleşme** arama yapar
-   Örnek: `/ara 12LAB20CF101`
+🔍 `/ara <deger>` - **C sütununda kısmi eşleşme** arama yapar
+   • Tüm sütunları gösterir
+   • Örnek: `/ara 12LAB`
 
-📅 `/tarih <deger>` - Kalibrasyon tarihi sorgular (sadece C ve D sütunları)
-   Örnek: `/tarih 12LAB20CF101`
+📅 `/tarih <deger>` - Kalibrasyon tarihi sorgular
+   • Sadece **C (ekipman kodu)** ve **E (kalibrasyon tarihi)** sütunlarını gösterir
+   • Örnek: `/tarih 12LAB20CF101`
 
 ✏️ `/guncelle <kod> <tarih>` - Kalibrasyon tarihini günceller
-   Örnek: `/guncelle 12LAB20CF101 2026-05-15`
-   Tarih formatı: YYYY-AA-GG
+   • **E sütununu** günceller
+   • Örnek: `/guncelle 12LAB20CF101 2026-05-15`
+   • Tarih formatı: YYYY-AA-GG
 
 ℹ️ `/start` - Botu başlat ve Excel bilgilerini göster
 🆘 `/help` - Bu yardım menüsü
 
 *Özellikler:*
-• Kolon isimleri 2. satırdan alınır
-• Kısmi eşleşme yapar (büyük/küçük harf duyarsız)
-• Tarih sorgulama özel format"""
+• Kolon isimleri **2. satırdan** alınır (harf göstermez)
+• **Kısmi eşleşme** yapar (büyük/küçük harf duyarsız)
+• Tarih sorgulama özel format (sadece C + E)"""
     
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
