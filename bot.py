@@ -243,8 +243,8 @@ def search_by_date_range(start_date_tr, end_date_tr, workbook, sheet_name):
             
             table = "```\n"
             table += f"┌────────┬─────────────────────────────────┬──────────────────────────────┬─────────────────┐\n"
-            table += f"│ Satır  │ Ekipman Kodu                    │ Açıklama                      │ Kalibrasyon     │\n"
-            table += f"│ No     │                                 │                               │ Tarihi          │\n"
+            table += f"│ Satır  │ Ekipman Kodu                    │ Açıklama                     │ Kalibrasyon     │\n"
+            table += f"│ No     │                                 │                              │ Tarihi          │\n"
             table += f"├────────┼─────────────────────────────────┼──────────────────────────────┼─────────────────┤\n"
             
             for item in page_items:
