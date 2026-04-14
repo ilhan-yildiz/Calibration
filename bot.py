@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 EXCEL_URL = os.getenv("EXCEL_URL")
-SHEET_NAME = os.getenv("SHEET_NAME", "TX Detail List")
+SHEET_NAME = os.getenv("SHEET_NAME")
 PORT = int(os.environ.get('PORT', 10000))
 
 # Flask uygulaması
