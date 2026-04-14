@@ -45,15 +45,8 @@ def get_column_headers(workbook, sheet_name):
     except:
         return {}
 
-def get_column_letter_by_header(headers, search_header):
-    """Başlık adına göre sütun harfini bul"""
-    for col_idx, header in headers.items():
-        if search_header.lower() in str(header).lower():
-            return openpyxl.utils.get_column_letter(col_idx)
-    return None
-
 def search_in_column_c_partial(search_value, workbook, sheet_name):
-    """C sütununda kısmi eşleşme arama (3. satırdan itibaren) - tüm sütunları başlık adıyla göster"""
+    """C sütununda kısmi eşleşme arama - Tablo formatında çıktı"""
     try:
         if sheet_name not in workbook.sheetnames:
             return None, f"❌ '{sheet_name}' sayfası bulunamadı!\nMevcut sayfalar: {', '.join(workbook.sheetnames)}"
@@ -67,14 +60,28 @@ def search_in_column_c_partial(search_value, workbook, sheet_name):
             if len(row) > 2 and row[2] is not None:
                 cell_value = str(row[2]).strip()
                 if search_lower in cell_value.lower():
-                    result_text = f"📌 *Satır {row_idx}*\n"
+                    # Tablo başlığı
+                    table = "```\n"
+                    table += "┌────────────┬─────────────────────────────────┐\n"
+                    table += "│ Alan       │ Değer                           │\n"
+                    table += "├────────────┼─────────────────────────────────┤\n"
                     
-                    # Tüm dolu sütunları başlık adıyla göster
+                    # Satır numarası
+                    table += f"│ Satır No   │ {row_idx:<31} │\n"
+                    
+                    # Tüm dolu sütunları tablo olarak göster
                     for col_idx, header in headers.items():
                         if col_idx - 1 < len(row) and row[col_idx - 1] is not None:
-                            result_text += f"   • *{header}:* {row[col_idx - 1]}\n"
+                            value = str(row[col_idx - 1])
+                            # Uzun değerleri kısalt
+                            if len(value) > 30:
+                                value = value[:27] + "..."
+                            table += f"├────────────┼─────────────────────────────────┤\n"
+                            table += f"│ {header:<10} │ {value:<31} │\n"
                     
-                    results.append(result_text)
+                    table += "└────────────┴─────────────────────────────────┘\n"
+                    table += "```"
+                    results.append(table)
                     
                     if len(results) >= 10:
                         break
@@ -87,7 +94,7 @@ def search_in_column_c_partial(search_value, workbook, sheet_name):
         return None, f"Arama hatası: {str(e)}"
 
 def search_calibration_date(search_value, workbook, sheet_name):
-    """C sütununda arama yap, C ve E sütunlarındaki verileri göster (E sütunu kalibrasyon tarihi)"""
+    """C sütununda arama yap, C ve E sütunları - Tablo formatında"""
     try:
         if sheet_name not in workbook.sheetnames:
             return None, f"❌ '{sheet_name}' sayfası bulunamadı!"
@@ -99,7 +106,7 @@ def search_calibration_date(search_value, workbook, sheet_name):
         
         # C sütunu başlığı (3. sütun)
         c_header = headers.get(3, "Ekipman Kodu")
-        # E sütunu başlığı (5. sütun) - kalibrasyon tarihi
+        # E sütunu başlığı (5. sütun)
         e_header = headers.get(5, "Kalibrasyon Tarihi")
         
         for row_idx, row in enumerate(sheet.iter_rows(min_row=3, values_only=True), 3):
@@ -107,14 +114,18 @@ def search_calibration_date(search_value, workbook, sheet_name):
                 cell_value = str(row[2]).strip()
                 if search_lower in cell_value.lower():
                     c_value = row[2] if len(row) > 2 else None
-                    e_value = row[4] if len(row) > 4 else None  # E sütunu = index 4
+                    e_value = row[4] if len(row) > 4 else None
                     
-                    result_text = f"📌 *{c_header}:* {c_value}\n"
-                    result_text += f"📅 *{e_header}:* {e_value if e_value else 'Belirtilmemiş'}\n"
-                    result_text += f"🔍 *Satır:* {row_idx}\n"
-                    result_text += f"━━━━━━━━━━━━━━━━━━━━━\n"
-                    
-                    results.append(result_text)
+                    table = "```\n"
+                    table += "┌─────────────────────┬─────────────────────────────────┐\n"
+                    table += "│ Bilgi               │ Değer                           │\n"
+                    table += "├─────────────────────┼─────────────────────────────────┤\n"
+                    table += f"│ Satır No            │ {row_idx:<31} │\n"
+                    table += f"│ {c_header:<17} │ {str(c_value)[:31]:<31} │\n"
+                    table += f"│ {e_header:<17} │ {str(e_value) if e_value else 'Belirtilmemiş':<31} │\n"
+                    table += "└─────────────────────┴─────────────────────────────────┘\n"
+                    table += "```"
+                    results.append(table)
                     
                     if len(results) >= 10:
                         break
@@ -181,8 +192,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             headers = get_column_headers(workbook, SHEET_NAME)
             info_text += "📝 *Kolon Başlıkları (2. satır)*\n"
             for col_idx, header in list(headers.items())[:8]:
-                col_letter = openpyxl.utils.get_column_letter(col_idx)
-                info_text += f"• {col_letter}: {header}\n"
+                info_text += f"• {header}\n"
         
         await update.message.reply_text(info_text, parse_mode="Markdown")
         
@@ -190,9 +200,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Excel okuma hatası: {str(e)}")
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/ara komutu - C sütununda kısmi eşleşme arama (tüm sütunları başlık adıyla göster)"""
+    """/ara komutu - Tablo formatında çıktı"""
     if not context.args:
-        await update.message.reply_text("❌ *Kullanım:* `/ara ARANACAK_DEGER`\n\nÖrnek: `/ara 12LAB20CF101`\n\nBu komut kısmi eşleşme yapar.", parse_mode="Markdown")
+        await update.message.reply_text("❌ *Kullanım:* `/ara ARANACAK_DEGER`\n\nÖrnek: `/ara 12LAB`\n\nBu komut kısmi eşleşme yapar ve sonuçları tablo olarak gösterir.", parse_mode="Markdown")
         return
     
     search_text = " ".join(context.args).strip()
@@ -219,9 +229,9 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Hata: {str(e)}")
 
 async def tarih_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/tarih komutu - Kalibrasyon tarihi sorgulama (sadece C ve E sütunları)"""
+    """/tarih komutu - Tablo formatında çıktı (sadece C ve E)"""
     if not context.args:
-        await update.message.reply_text("❌ *Kullanım:* `/tarih ARANACAK_DEGER`\n\nÖrnek: `/tarih 12LAB20CF101`\n\nBu komut sadece ekipman kodu (C) ve kalibrasyon tarihini (E) gösterir.", parse_mode="Markdown")
+        await update.message.reply_text("❌ *Kullanım:* `/tarih ARANACAK_DEGER`\n\nÖrnek: `/tarih 12LAB20CF101`\n\nBu komut sadece ekipman kodu (C) ve kalibrasyon tarihini (E) tablo olarak gösterir.", parse_mode="Markdown")
         return
     
     search_text = " ".join(context.args).strip()
@@ -282,11 +292,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 *Komutlar:*
 
 🔍 `/ara <deger>` - **C sütununda kısmi eşleşme** arama yapar
-   • Tüm sütunları gösterir
+   • Tüm sütunları **tablo** olarak gösterir
    • Örnek: `/ara 12LAB`
 
 📅 `/tarih <deger>` - Kalibrasyon tarihi sorgular
-   • Sadece **C (ekipman kodu)** ve **E (kalibrasyon tarihi)** sütunlarını gösterir
+   • Sadece **C (ekipman kodu)** ve **E (kalibrasyon tarihi)** sütunlarını **tablo** olarak gösterir
    • Örnek: `/tarih 12LAB20CF101`
 
 ✏️ `/guncelle <kod> <tarih>` - Kalibrasyon tarihini günceller
@@ -298,9 +308,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🆘 `/help` - Bu yardım menüsü
 
 *Özellikler:*
-• Kolon isimleri **2. satırdan** alınır (harf göstermez)
+• Kolon isimleri **2. satırdan** alınır
 • **Kısmi eşleşme** yapar (büyük/küçük harf duyarsız)
-• Tarih sorgulama özel format (sadece C + E)"""
+• Sonuçlar **tablo formatında** gösterilir"""
     
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
