@@ -44,21 +44,16 @@ def format_date_to_tr(date_value):
     if not date_value:
         return None
     
-    # String ise
     if isinstance(date_value, str):
-        # yyyy-aa-gg formatında ise (Excel'den gelen)
         if '-' in date_value:
             parts = date_value.split('-')
             if len(parts) == 3:
                 return f"{parts[2]}.{parts[1]}.{parts[0]}"
-        # gg.aa.yyyy formatında ise
         elif '.' in date_value:
-            # Doğru formatta mı kontrol et
             if re.match(r'^\d{2}\.\d{2}\.\d{4}$', date_value):
                 return date_value
         return None
     
-    # datetime objesi ise
     if hasattr(date_value, 'strftime'):
         return date_value.strftime("%d.%m.%Y")
     
@@ -70,7 +65,6 @@ def validate_date_tr(date_string):
     match = re.match(pattern, date_string)
     if match:
         day, month, year = match.groups()
-        # Tarihin geçerli olup olmadığını kontrol et
         try:
             datetime(int(year), int(month), int(day))
             return f"{year}-{month}-{day}", True
@@ -123,7 +117,6 @@ def search_in_column_c_partial(search_value, workbook, sheet_name):
                     for col_idx, header in headers.items():
                         if col_idx - 1 < len(row) and row[col_idx - 1] is not None:
                             value = str(row[col_idx - 1])
-                            # Tarih sütunu ise (E sütunu - index 5)
                             if col_idx == 5:
                                 formatted = format_date_to_tr(value)
                                 value = formatted if formatted else "Belirtilmemiş"
@@ -199,7 +192,6 @@ def search_by_date_range(start_date_tr, end_date_tr, workbook, sheet_name):
         sheet = workbook[sheet_name]
         headers = get_column_headers(workbook, sheet_name)
         
-        # Tarihleri datetime objesine çevir
         start_date = parse_date_tr(start_date_tr)
         end_date = parse_date_tr(end_date_tr)
         
@@ -217,7 +209,6 @@ def search_by_date_range(start_date_tr, end_date_tr, workbook, sheet_name):
                 equipment_code = row[2] if len(row) > 2 else None
                 description = row[3] if len(row) > 3 else None
                 
-                # Tarihi datetime'a çevir
                 row_date = None
                 if isinstance(date_value, str):
                     if '-' in date_value:
@@ -240,32 +231,38 @@ def search_by_date_range(start_date_tr, end_date_tr, workbook, sheet_name):
         if not found_equipment:
             return None, f"❌ {start_date_tr} - {end_date_tr} tarihleri arasında kalibrasyon yapılan ekipman bulunamadı."
         
-        # Tablo oluştur
-        table = "```\n"
-        table += "┌────────┬─────────────────────────────────┬──────────────────────────────┬─────────────────┐\n"
-        table += "│ Satır  │ Ekipman Kodu                    │ Açıklama                      │ Kalibrasyon     │\n"
-        table += "│ No     │                                 │                               │ Tarihi          │\n"
-        table += "├────────┼─────────────────────────────────┼──────────────────────────────┼─────────────────┤\n"
+        # Sayfalama ile göster (her sayfada 20 satır)
+        page_size = 20
+        pages = []
+        total_pages = (len(found_equipment) + page_size - 1) // page_size
         
-        for item in found_equipment[:20]:
-            code = str(item['code'])[:31] if item['code'] else "Belirtilmemiş"
-            desc = str(item['description'])[:28] if item['description'] else "Belirtilmemiş"
-            table += f"│ {item['row']:<6} │ {code:<31} │ {desc:<28} │ {item['date']:<15} │\n"
-        
-        if len(found_equipment) > 20:
+        for page_num in range(total_pages):
+            start_idx = page_num * page_size
+            end_idx = min(start_idx + page_size, len(found_equipment))
+            page_items = found_equipment[start_idx:end_idx]
+            
+            table = "```\n"
+            table += f"┌────────┬─────────────────────────────────┬──────────────────────────────┬─────────────────┐\n"
+            table += f"│ Satır  │ Ekipman Kodu                    │ Açıklama                      │ Kalibrasyon     │\n"
+            table += f"│ No     │                                 │                               │ Tarihi          │\n"
             table += f"├────────┼─────────────────────────────────┼──────────────────────────────┼─────────────────┤\n"
-            table += f"│ ...    │ {len(found_equipment) - 20} daha sonuç var...                                              │                 │\n"
+            
+            for item in page_items:
+                code = str(item['code'])[:31] if item['code'] else "Belirtilmemiş"
+                desc = str(item['description'])[:28] if item['description'] else "Belirtilmemiş"
+                table += f"│ {item['row']:<6} │ {code:<31} │ {desc:<28} │ {item['date']:<15} │\n"
+            
+            table += f"└────────┴─────────────────────────────────┴──────────────────────────────┴─────────────────┘\n"
+            table += "```"
+            pages.append(table)
         
-        table += "└────────┴─────────────────────────────────┴──────────────────────────────┴─────────────────┘\n"
-        table += "```"
-        
-        return [table], f"✅ {len(found_equipment)} ekipman bulundu ({start_date_tr} - {end_date_tr})"
+        return pages, f"✅ {len(found_equipment)} ekipman bulundu ({start_date_tr} - {end_date_tr}) ({total_pages} sayfa)"
         
     except Exception as e:
         return None, f"Arama hatası: {str(e)}"
 
 def get_all_calibrated_equipment(workbook, sheet_name):
-    """Tarihi olan tüm ekipmanları listele (C ve D sütunları)"""
+    """Tarihi olan tüm ekipmanları listele (C ve D sütunları) - sayfalama ile"""
     try:
         if sheet_name not in workbook.sheetnames:
             return None, f"❌ '{sheet_name}' sayfası bulunamadı!"
@@ -275,19 +272,18 @@ def get_all_calibrated_equipment(workbook, sheet_name):
         
         c_header = headers.get(3, "Ekipman Kodu")
         d_header = headers.get(4, "Açıklama")
-        e_header = headers.get(5, "Kalibrasyon Tarihi")
         
         equipment_list = []
         
         for row_idx, row in enumerate(sheet.iter_rows(min_row=3, values_only=True), 3):
-            if len(row) > 4 and row[4] is not None:  # E sütunu dolu mu?
+            if len(row) > 4 and row[4] is not None:
                 date_value = row[4]
                 equipment_code = row[2] if len(row) > 2 else None
                 description = row[3] if len(row) > 3 else None
                 
                 formatted_date = format_date_to_tr(date_value) if date_value else None
                 
-                if formatted_date:  # Sadece geçerli tarihi olanlar
+                if formatted_date:
                     equipment_list.append({
                         'row': row_idx,
                         'code': equipment_code,
@@ -298,32 +294,38 @@ def get_all_calibrated_equipment(workbook, sheet_name):
         if not equipment_list:
             return None, "❌ Henüz kalibrasyon tarihi eklenmiş ekipman bulunamadı."
         
-        # Tablo oluştur
-        table = "```\n"
-        table += "┌────────┬─────────────────────────────────┬──────────────────────────────┬─────────────────┐\n"
-        table += "│ Satır  │ Ekipman Kodu                    │ Açıklama                      │ Kalibrasyon     │\n"
-        table += "│ No     │                                 │                               │ Tarihi          │\n"
-        table += "├────────┼─────────────────────────────────┼──────────────────────────────┼─────────────────┤\n"
+        # Sayfalama ile göster (her sayfada 20 satır)
+        page_size = 20
+        pages = []
+        total_pages = (len(equipment_list) + page_size - 1) // page_size
         
-        for item in equipment_list[:30]:
-            code = str(item['code'])[:31] if item['code'] else "Belirtilmemiş"
-            desc = str(item['description'])[:28] if item['description'] else "Belirtilmemiş"
-            table += f"│ {item['row']:<6} │ {code:<31} │ {desc:<28} │ {item['date']:<15} │\n"
-        
-        if len(equipment_list) > 30:
+        for page_num in range(total_pages):
+            start_idx = page_num * page_size
+            end_idx = min(start_idx + page_size, len(equipment_list))
+            page_items = equipment_list[start_idx:end_idx]
+            
+            table = "```\n"
+            table += f"┌────────┬─────────────────────────────────┬──────────────────────────────┬─────────────────┐\n"
+            table += f"│ Satır  │ Ekipman Kodu                    │ Açıklama                      │ Kalibrasyon     │\n"
+            table += f"│ No     │                                 │                               │ Tarihi          │\n"
             table += f"├────────┼─────────────────────────────────┼──────────────────────────────┼─────────────────┤\n"
-            table += f"│ ...    │ {len(equipment_list) - 30} daha sonuç var...                                              │                 │\n"
+            
+            for item in page_items:
+                code = str(item['code'])[:31] if item['code'] else "Belirtilmemiş"
+                desc = str(item['description'])[:28] if item['description'] else "Belirtilmemiş"
+                table += f"│ {item['row']:<6} │ {code:<31} │ {desc:<28} │ {item['date']:<15} │\n"
+            
+            table += f"└────────┴─────────────────────────────────┴──────────────────────────────┴─────────────────┘\n"
+            table += "```"
+            pages.append(table)
         
-        table += "└────────┴─────────────────────────────────┴──────────────────────────────┴─────────────────┘\n"
-        table += "```"
-        
-        return [table], f"✅ Toplam {len(equipment_list)} ekipmanın kalibrasyon tarihi girilmiştir."
+        return pages, f"✅ Toplam {len(equipment_list)} ekipmanın kalibrasyon tarihi girilmiştir. ({total_pages} sayfa)"
         
     except Exception as e:
         return None, f"Hata: {str(e)}"
 
 def update_calibration_date(equipment_code, new_date, workbook, sheet_name):
-    """Excel'de kalibrasyon tarihini güncelle (E sütunu)"""
+    """Excel'de kalibrasyon tarihini güncelle (E sütunu - 5. sütun)"""
     try:
         if sheet_name not in workbook.sheetnames:
             return False, f"Sayfa bulunamadı: {sheet_name}"
@@ -337,9 +339,11 @@ def update_calibration_date(equipment_code, new_date, workbook, sheet_name):
             if len(row) > 2 and row[2].value is not None:
                 cell_value = str(row[2].value).strip()
                 if cell_value.lower() == search_lower:
+                    # E sütununu güncelle (5. sütun)
                     date_cell = sheet.cell(row_idx, 5)
                     date_cell.value = new_date
                     
+                    # Yeşil renklendir
                     green_fill = PatternFill(start_color="00FF00", end_color="00FF00", fill_type="solid")
                     date_cell.fill = green_fill
                     
@@ -356,7 +360,7 @@ def update_calibration_date(equipment_code, new_date, workbook, sheet_name):
         return False, f"Hata: {str(e)}"
 
 def clear_calibration_date(equipment_code, workbook, sheet_name):
-    """Excel'de kalibrasyon tarihini temizle (E sütunu)"""
+    """Excel'de kalibrasyon tarihini temizle (E sütunu - 5. sütun)"""
     try:
         if sheet_name not in workbook.sheetnames:
             return False, f"Sayfa bulunamadı: {sheet_name}"
@@ -365,16 +369,22 @@ def clear_calibration_date(equipment_code, workbook, sheet_name):
         search_lower = str(equipment_code).lower().strip()
         found = False
         updated_row = None
+        old_value = None
         
         for row_idx, row in enumerate(sheet.iter_rows(min_row=3, max_row=sheet.max_row, values_only=False), 3):
             if len(row) > 2 and row[2].value is not None:
                 cell_value = str(row[2].value).strip()
                 if cell_value.lower() == search_lower:
+                    # E sütununu temizle (5. sütun)
                     date_cell = sheet.cell(row_idx, 5)
+                    old_value = date_cell.value
                     date_cell.value = None
                     
-                    red_fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
+                    # Kırmızı renklendir (silindi)
+                    red_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
                     date_cell.fill = red_fill
+                    
+                    logger.info(f"Tarih silindi: Satır {row_idx}, Eski değer: {old_value}")
                     
                     found = True
                     updated_row = row_idx
@@ -523,7 +533,6 @@ async def tarih_ara_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_date = context.args[0].strip()
     end_date = context.args[1].strip()
     
-    # Tarih formatını kontrol et
     if not re.match(r'^\d{2}\.\d{2}\.\d{4}$', start_date) or not re.match(r'^\d{2}\.\d{2}\.\d{4}$', end_date):
         await update.message.reply_text("❌ Hatalı tarih formatı! Lütfen **gg.aa.yyyy** formatında girin.\nÖrnek: 01.01.2026", parse_mode="Markdown")
         return
@@ -540,6 +549,7 @@ async def tarih_ara_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(message, parse_mode="Markdown")
             for result in results:
                 await update.message.reply_text(result, parse_mode="Markdown")
+                await asyncio.sleep(0.3)
         else:
             await update.message.reply_text(message)
             
@@ -547,7 +557,7 @@ async def tarih_ara_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Hata: {str(e)}")
 
 async def listeli_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Tarihi olan tüm ekipmanları listele (C ve D sütunları)"""
+    """Tarihi olan tüm ekipmanları listele (C ve D sütunları) - sayfalama ile"""
     await update.message.reply_text("📋 Kalibrasyon tarihi girilmiş tüm ekipmanlar listeleniyor...\n\nBu işlem birkaç saniye sürebilir.")
     
     try:
@@ -560,6 +570,7 @@ async def listeli_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(message, parse_mode="Markdown")
             for result in results:
                 await update.message.reply_text(result, parse_mode="Markdown")
+                await asyncio.sleep(0.3)
         else:
             await update.message.reply_text(message)
             
@@ -575,7 +586,6 @@ async def guncelle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     equipment_code = context.args[0].strip()
     new_date_tr = context.args[1].strip()
     
-    # Tarih formatını kontrol et
     if not re.match(r'^\d{2}\.\d{2}\.\d{4}$', new_date_tr):
         await update.message.reply_text("❌ Hatalı tarih formatı! Lütfen **gg.aa.yyyy** formatında girin.\nÖrnek: 14.04.2026", parse_mode="Markdown")
         return
@@ -660,6 +670,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📋 `/listeli` - **Kalibrasyon tarihi girilmiş TÜM ekipmanları** listeler
    • C (ekipman kodu) ve D (açıklama) sütunlarını gösterir
    • Toplam sayıyı da belirtir
+   • Uzun listelerde **sayfalama** yapar
 
 ✏️ `/guncelle <kod> <tarih>` - Kalibrasyon tarihini günceller
    • Örnek: `/guncelle 00GHC01CP101 14.04.2026`
