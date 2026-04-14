@@ -37,8 +37,6 @@ def test_excel_url():
         logger.info(f"Test edilen URL: {EXCEL_URL}")
         response = requests.get(EXCEL_URL, timeout=30, verify=True)
         logger.info(f"HTTP Status: {response.status_code}")
-        logger.info(f"Content-Type: {response.headers.get('Content-Type')}")
-        logger.info(f"Dosya boyutu: {len(response.content)} bytes")
         
         if response.status_code == 200:
             if b'PK' in response.content[:2]:
@@ -49,62 +47,36 @@ def test_excel_url():
         else:
             return False, f"HTTP {response.status_code} hatası"
             
-    except requests.exceptions.Timeout:
-        return False, "Bağlantı zaman aşımı"
-    except requests.exceptions.ConnectionError:
-        return False, "Bağlantı hatası - URL'ye ulaşılamıyor"
     except Exception as e:
         return False, f"Hata: {str(e)}"
 
-def search_in_all_columns(search_value, workbook, sheet_name):
-    """Tüm sütunlarda arama yap (kısmi eşleşme)"""
+def search_in_column_c(search_value, workbook, sheet_name):
+    """C sütununda tam eşleşme arama (3. satırdan itibaren)"""
     try:
         if sheet_name not in workbook.sheetnames:
             return None, f"❌ '{sheet_name}' sayfası bulunamadı!\nMevcut sayfalar: {', '.join(workbook.sheetnames)}"
         
         sheet = workbook[sheet_name]
         results = []
-        search_lower = str(search_value).lower()
+        search_lower = str(search_value).lower().strip()
         
-        for row_idx, row in enumerate(sheet.iter_rows(min_row=1, values_only=True), 1):
-            for col_idx, cell_value in enumerate(row):
-                if cell_value is not None and search_lower in str(cell_value).lower():
-                    # Sütun harfini bul (A, B, C, ... AA, AB, ...)
-                    col_letter = ""
-                    temp = col_idx
-                    while temp >= 0:
-                        temp -= 1
-                        col_letter = chr(65 + (temp % 26)) + col_letter
-                        temp = temp // 26 - 1
-                        if temp < 0:
-                            break
-                    if not col_letter:
-                        col_letter = chr(65 + col_idx)
+        for row_idx, row in enumerate(sheet.iter_rows(min_row=3, values_only=True), 3):  # 3. satırdan başla (başlıkları atla)
+            if len(row) > 2 and row[2] is not None:
+                cell_value = str(row[2]).strip()
+                if cell_value.lower() == search_lower:
+                    # Tüm satırı göster (ilk 15 sütun)
+                    result_text = f"📌 *Satır {row_idx}*\n"
+                    result_text += f"   C sütunu: {row[2]}\n\n"
                     
-                    # Tüm satırı al (ilk 15 sütun)
-                    row_data = []
-                    for i in range(min(15, len(row))):
-                        if row[i] is not None:
-                            col_let = ""
-                            t = i
-                            while t >= 0:
-                                t -= 1
-                                col_let = chr(65 + (t % 26)) + col_let
-                                t = t // 26 - 1
-                                if t < 0:
-                                    break
-                            if not col_let:
-                                col_let = chr(65 + i)
-                            row_data.append(f"{col_let}: {row[i]}")
+                    for col_idx in range(min(15, len(row))):
+                        if row[col_idx] is not None and col_idx != 2:  # C hariç diğerlerini göster
+                            col_letter = openpyxl.utils.get_column_letter(col_idx + 1)
+                            result_text += f"   {col_letter}: {row[col_idx]}\n"
                     
-                    result_text = f"📌 *Satır {row_idx}* (Bulunan: {col_letter} sütununda '{cell_value}')\n"
-                    result_text += "   " + "\n   ".join(row_data[:10])  # İlk 10 sütunu göster
                     results.append(result_text)
                     
                     if len(results) >= 10:
                         break
-            if len(results) >= 10:
-                break
         
         if not results:
             return None, None
@@ -119,10 +91,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_valid, message = test_excel_url()
     
     if not is_valid:
-        await update.message.reply_text(f"❌ *Excel Hatası*\n\n{message}\n\n📋 Excel URL: `{EXCEL_URL}`\n\nLütfen URL'yi kontrol edin.", parse_mode="Markdown")
+        await update.message.reply_text(f"❌ *Excel Hatası*\n\n{message}", parse_mode="Markdown")
         return
     
-    await update.message.reply_text(f"✅ Excel dosyasına erişim başarılı!\n\n{message}\n\nŞimdi arama yapabilirsiniz.", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ Excel dosyasına erişim başarılı!\n\n{message}\n\nŞimdi `/ara` komutunu kullanabilirsiniz.", parse_mode="Markdown")
     
     try:
         response = requests.get(EXCEL_URL, timeout=30)
@@ -140,29 +112,31 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             info_text += f"• Toplam satır: {sheet.max_row}\n"
             info_text += f"• Toplam sütun: {sheet.max_column}\n\n"
             
-            info_text += "📝 *Örnek Veriler (İlk 3 satır, ilk 5 sütun)*\n\n"
-            for row_num in range(1, min(4, sheet.max_row + 1)):
-                info_text += f"Satır {row_num}:\n"
-                for col_num in range(1, min(6, sheet.max_column + 1)):
-                    cell_value = sheet.cell(row_num, col_num).value
-                    col_letter = openpyxl.utils.get_column_letter(col_num)
-                    info_text += f"  {col_letter}: {cell_value if cell_value else 'Boş'}\n"
-                info_text += "\n"
+            info_text += "📝 *Örnek Veriler (C sütunu, ilk 5 veri satırı)*\n\n"
+            count = 0
+            for row_num in range(3, min(8, sheet.max_row + 1)):
+                c_value = sheet.cell(row_num, 3).value
+                if c_value:
+                    info_text += f"Satır {row_num}: {c_value}\n"
+                    count += 1
+                    if count >= 5:
+                        break
         
         await update.message.reply_text(info_text, parse_mode="Markdown")
         
     except Exception as e:
         await update.message.reply_text(f"⚠️ Excel okuma hatası: {str(e)}")
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    search_text = update.message.text.strip()
-    
-    if not search_text:
-        await update.message.reply_text("⚠️ Lütfen bir arama değeri girin.")
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/ara komutu - C sütununda arama yapar"""
+    if not context.args:
+        await update.message.reply_text("❌ *Kullanım:* `/ara ARANACAK_DEGER`\n\nÖrnek: `/ara 12LAB20CF101`", parse_mode="Markdown")
         return
     
-    logger.info(f"🔍 Arama yapılıyor: '{search_text}'")
-    await update.message.reply_text(f"🔍 '{search_text}' aranıyor... (Tüm sütunlarda, kısmi eşleşme)")
+    search_text = " ".join(context.args).strip()
+    
+    await update.message.reply_text(f"🔍 '{search_text}' aranıyor... (C sütununda, tam eşleşme)")
+    logger.info(f"Arama yapılıyor: '{search_text}'")
     
     try:
         response = requests.get(EXCEL_URL, timeout=30)
@@ -170,21 +144,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         workbook = openpyxl.load_workbook(BytesIO(response.content), data_only=True)
         
-        results, error = search_in_all_columns(search_text, workbook, SHEET_NAME)
+        results, error = search_in_column_c(search_text, workbook, SHEET_NAME)
         
         if error:
             logger.error(f"Hata: {error}")
             await update.message.reply_text(error)
         elif results:
             logger.info(f"✅ {len(results)} sonuç bulundu")
-            # Sonuçları parçalara böl (Telegram mesaj limiti 4096 karakter)
-            for i, result in enumerate(results):
+            for result in results:
                 await update.message.reply_text(result, parse_mode="Markdown")
-                if i < len(results) - 1:
-                    await asyncio.sleep(0.5)
+                await asyncio.sleep(0.3)
         else:
             logger.info(f"❌ Sonuç bulunamadı: '{search_text}'")
-            await update.message.reply_text(f"❌ '{search_text}' için hiçbir sütunda eşleşme bulunamadı.\n\n💡 İpucu: Büyük/küçük harf fark etmez, kısmi eşleşme yaparım.")
+            await update.message.reply_text(f"❌ '{search_text}' için C sütununda eşleşme bulunamadı.\n\n💡 İpucu: Tam eşleşme arıyorum. Büyük/küçük harf fark etmez.")
             
     except Exception as e:
         logger.error(f"Exception: {str(e)}")
@@ -193,16 +165,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = """📖 *Yardım*
 
-• Arama yapmak için bir değer yazın
-• **Tüm sütunlarda** ve **kısmi eşleşme** ile ararım
-• Büyük/küçük harf fark etmez
-• Örnek: `KKS` yazarsanız "KKS-001", "AKKS01" gibi değerleri de bulurum
-
 *Komutlar:*
 /start - Botu başlat ve Excel'i test et
+/ara <deger> - C sütununda tam eşleşme arama yapar
 /help - Bu yardım
 
-*Not:* Excel dosyası her aramada yeniden indirilir, biraz bekleyebilir."""
+*Örnekler:*
+`/ara 12LAB20CF101`
+`/ara TX-001`
+
+*Not:* 
+• C sütununda tam eşleşme arar
+• Büyük/küçük harf fark etmez
+• 3. satırdan itibaren arama yapar"""
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
 def main():
@@ -219,8 +194,10 @@ def main():
     
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("ara", search_command))
     application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Normal mesajları işleme (opsiyonel - isterseniz kaldırabilirsiniz)
+    # application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     application.run_polling()
 
